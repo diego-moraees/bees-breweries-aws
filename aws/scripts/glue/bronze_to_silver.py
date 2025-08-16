@@ -23,7 +23,6 @@ Notes:
 
 import os
 import re
-import sys
 import boto3
 from pyspark.sql import SparkSession, Window
 from pyspark.sql import functions as F
@@ -73,8 +72,8 @@ def discover_latest_ingestion_date(bronze_bucket: str, dataset: str) -> str:
         raise RuntimeError(
             f"No run_date partitions found under s3://{bronze_bucket}/{dataset}/"
         )
-    return sorted(dates)[-1]
 
+    return max(dates)
 
 # ---------------------------
 # I/O helpers
@@ -162,66 +161,23 @@ def transform(df):
     return df.select(*keep)
 
 
-def get_opt_arg(flag: str):
-    try:
-        i = sys.argv.index(flag)
-        if i + 1 < len(sys.argv) and not sys.argv[i + 1].startswith("--"):
-            return sys.argv[i + 1]
-    except ValueError:
-        pass
-    return None
 
-def has_flag(flag: str):
-    return flag in sys.argv or os.getenv(flag.strip("-").upper(), "").lower() in ("1","true","yes")
-
-
-# ---------------------------
-# Entrypoint
-# ---------------------------
-def main(ingestion_date: str, dataset_name: str, bronze_bucket: str, silver_bucket: str):
-    spark = get_spark()
-    try:
-        # Auto-discovery if not provided
-        if not ingestion_date:
-            ingestion_date = discover_latest_ingestion_date(bronze_bucket, dataset_name)
-            print(f"[auto] discovered ingestion_date={ingestion_date}")
-
-        if has_flag("--discover_only"):
-            print(f"[discover_only] ingestion_date={ingestion_date}")
-            return
-
-        raw_df = read_bronze(spark, bronze_bucket, dataset_name, ingestion_date)
-        tr_df = transform(raw_df)
-        write_silver(tr_df, silver_bucket, dataset_name, ingestion_date)
-        print(f"OK silver {ingestion_date} rows={tr_df.count()}")
-    finally:
-        spark.stop()
-
-
-if __name__ == "__main__":
-    # Optional: --ingestion_date YYYY-MM-DD
-    # Optional: --dataset_name, --bronze_bucket, --silver_bucket
+def main():
     dataset_name  = os.getenv("DATASET_NAME",  "openbrewerydb")
     bronze_bucket = os.getenv("BRONZE_BUCKET", "bees-lakehouse-bronze-dev")
     silver_bucket = os.getenv("SILVER_BUCKET", "bees-lakehouse-silver-dev")
 
-    ingestion_date = None
-    if "--ingestion_date" in sys.argv:
-        ingestion_date = sys.argv[sys.argv.index("--ingestion_date") + 1]
-    if "--dataset_name" in sys.argv:
-        dataset_name = sys.argv[sys.argv.index("--dataset_name") + 1]
-    if "--bronze_bucket" in sys.argv:
-        bronze_bucket = sys.argv[sys.argv.index("--bronze_bucket") + 1]
-    if "--silver_bucket" in sys.argv:
-        silver_bucket = sys.argv[sys.argv.index("--silver_bucket") + 1]
+    spark = get_spark()
+    try:
+        run_date = discover_latest_ingestion_date(bronze_bucket, dataset_name)
+        print(f"[auto] discovered run_date={run_date}")
 
-    ingestion_date = get_opt_arg("--ingestion_date")
-    ds_arg = get_opt_arg("--dataset_name")
-    br_arg = get_opt_arg("--bronze_bucket")
-    sl_arg = get_opt_arg("--silver_bucket")
+        raw_df = read_bronze(spark, bronze_bucket, dataset_name, run_date)
+        tr_df  = transform(raw_df)
+        write_silver(tr_df, silver_bucket, dataset_name, run_date)
+        print(f"OK silver {run_date} rows={tr_df.count()}")
+    finally:
+        spark.stop()
 
-    if ds_arg: dataset_name = ds_arg
-    if br_arg: bronze_bucket = br_arg
-    if sl_arg: silver_bucket = sl_arg
-
-    main(ingestion_date, dataset_name, bronze_bucket, silver_bucket)
+if __name__ == "__main__":
+    main()

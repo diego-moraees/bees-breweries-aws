@@ -119,7 +119,6 @@ module "glue_bronze_to_silver" {
   worker_type       = "G.1X"
   environment       = var.environment
   additional_arguments = {
-    "--ingestion_date" = ""  # passamos na execução
     "--dataset_name"   = "openbrewerydb"
     "--bronze_bucket"  = "${var.bees_s3_bronze}-${var.environment}"
     "--silver_bucket"  = "${var.bees_s3_silver}-${var.environment}"
@@ -141,8 +140,10 @@ module "glue_silver_to_gold" {
   additional_arguments = {
     "--ingestion_date" = ""  # passamos na execução
     "--dataset_name"   = "openbrewerydb"
+    "--gold_dataset_name"  = "openbrewerydb_agg"
     "--silver_bucket"  = "${var.bees_s3_silver}-${var.environment}"
     "--gold_bucket"    = "${var.bees_s3_gold}-${var.environment}"
+
   }
   depends_on = [ module.upload_bronze_to_silver ]
 }

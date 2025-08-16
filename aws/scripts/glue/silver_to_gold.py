@@ -25,31 +25,10 @@ Args:
 """
 
 import os
-import sys
 import re
 import boto3
 from pyspark.sql import SparkSession, functions as F
 
-
-# ---------------------------
-# Helpers (args & discovery)
-# ---------------------------
-def get_opt_arg(flag: str):
-    """Return value for a CLI flag if present and not followed by another flag."""
-    try:
-        i = sys.argv.index(flag)
-        if i + 1 < len(sys.argv) and not sys.argv[i + 1].startswith("--"):
-            return sys.argv[i + 1]
-    except ValueError:
-        pass
-    return None
-
-def has_flag(flag: str):
-    """True if flag is present on CLI or as truthy env (e.g., DISCOVER_ONLY=1)."""
-    if flag in sys.argv:
-        return True
-    key = flag.strip("-").upper()
-    return os.getenv(key, "").lower() in ("1", "true", "yes")
 
 def discover_latest_ingestion_date(bucket: str, dataset: str) -> str:
     """
@@ -118,17 +97,17 @@ def write_gold(df, bucket: str, dataset: str, ingestion_date: str):
 # ---------------------------
 # Entrypoint
 # ---------------------------
-def main(ingestion_date: str, dataset_name: str, gold_dataset_name: str,
-         silver_bucket: str, gold_bucket: str):
+def main():
+    # Somente via ENV (ou defaults do código). Nada de CLI.
+    dataset_name      = os.getenv("DATASET_NAME",      "openbrewerydb")
+    gold_dataset_name = os.getenv("GOLD_DATASET_NAME", "openbrewerydb_agg")
+    silver_bucket     = os.getenv("SILVER_BUCKET",     "bees-lakehouse-silver-dev")
+    gold_bucket       = os.getenv("GOLD_BUCKET",       "bees-lakehouse-gold-dev")
+
     spark = get_spark()
     try:
-        if not ingestion_date:
-            ingestion_date = discover_latest_ingestion_date(silver_bucket, dataset_name)
-            print(f"[auto] discovered ingestion_date={ingestion_date}")
-
-        if has_flag("--discover_only"):
-            print(f"[discover_only] ingestion_date={ingestion_date}")
-            return
+        ingestion_date = discover_latest_ingestion_date(silver_bucket, dataset_name)
+        print(f"[auto] discovered ingestion_date={ingestion_date}")
 
         silver_df = read_silver(spark, silver_bucket, dataset_name, ingestion_date)
         agg_df = aggregate(silver_df)
@@ -137,23 +116,5 @@ def main(ingestion_date: str, dataset_name: str, gold_dataset_name: str,
     finally:
         spark.stop()
 
-
 if __name__ == "__main__":
-    dataset_name      = os.getenv("DATASET_NAME",      "openbrewerydb")
-    gold_dataset_name = os.getenv("GOLD_DATASET_NAME", "openbrewerydb_agg")
-    silver_bucket     = os.getenv("SILVER_BUCKET",     "bees-lakehouse-silver-dev")
-    gold_bucket       = os.getenv("GOLD_BUCKET",       "bees-lakehouse-gold-dev")
-
-    # CLI overrides
-    ingestion_date_arg = get_opt_arg("--ingestion_date")
-    ds_arg             = get_opt_arg("--dataset_name")
-    ds_gold_arg        = get_opt_arg("--gold_dataset_name")
-    silver_arg         = get_opt_arg("--silver_bucket")
-    gold_arg           = get_opt_arg("--gold_bucket")
-
-    if ds_arg:       dataset_name      = ds_arg
-    if ds_gold_arg:  gold_dataset_name = ds_gold_arg
-    if silver_arg:   silver_bucket     = silver_arg
-    if gold_arg:     gold_bucket       = gold_arg
-
-    main(ingestion_date_arg, dataset_name, gold_dataset_name, silver_bucket, gold_bucket)
+    main()
