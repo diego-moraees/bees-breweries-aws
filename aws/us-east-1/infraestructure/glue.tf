@@ -1,4 +1,4 @@
-# Policy extra para o role do Glue ler scripts, ler Bronze e escrever Silver
+# Policy extra para o role do Glue ler scripts, ler Bronze, escrever Silver e Gold
 resource "aws_iam_role_policy" "glue_s3_access" {
   name = "glue-s3-access-${var.environment}"
 
@@ -8,7 +8,7 @@ resource "aws_iam_role_policy" "glue_s3_access" {
   policy = jsonencode({
     Version = "2012-10-17",
     Statement = [
-      # Scripts bucket: listar e ler o script do job
+      # ---------------- Scripts ----------------
       {
         Sid      = "ListScriptsBucket",
         Effect   = "Allow",
@@ -22,7 +22,7 @@ resource "aws_iam_role_policy" "glue_s3_access" {
         Resource = "arn:aws:s3:::${var.bees_s3_scripts}-${var.environment}/glue/*"
       },
 
-      # Bronze: listar e ler
+      # ---------------- Bronze (read) ----------------
       {
         Sid      = "ListBronzeBucket",
         Effect   = "Allow",
@@ -36,7 +36,7 @@ resource "aws_iam_role_policy" "glue_s3_access" {
         Resource = "arn:aws:s3:::${var.bees_s3_bronze}-${var.environment}/*"
       },
 
-      # Silver: listar e escrever/overwritar (inclui delete e multipart)
+      # ---------------- Silver (read/write) ----------------
       {
         Sid      = "ListSilverBucket",
         Effect   = "Allow",
@@ -51,7 +51,7 @@ resource "aws_iam_role_policy" "glue_s3_access" {
         Sid      = "RWSilverObjects",
         Effect   = "Allow",
         Action   = [
-          "s3:GetObject",                 # << importante p/ Spark checar/commitar
+          "s3:GetObject",
           "s3:PutObject",
           "s3:DeleteObject",
           "s3:AbortMultipartUpload",
@@ -60,7 +60,31 @@ resource "aws_iam_role_policy" "glue_s3_access" {
         Resource = "arn:aws:s3:::${var.bees_s3_silver}-${var.environment}/*"
       },
 
-      # CloudWatch metrics (evita os erros do GlueCloudWatchReporter)
+      # ---------------- Gold (read/write) ----------------
+      {
+        Sid      = "ListGoldBucket",
+        Effect   = "Allow",
+        Action   = [
+          "s3:ListBucket",
+          "s3:GetBucketLocation",
+          "s3:ListBucketMultipartUploads"
+        ],
+        Resource = "arn:aws:s3:::${var.bees_s3_gold}-${var.environment}"
+      },
+      {
+        Sid      = "RWGoldObjects",
+        Effect   = "Allow",
+        Action   = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:AbortMultipartUpload",
+          "s3:ListMultipartUploadParts"
+        ],
+        Resource = "arn:aws:s3:::${var.bees_s3_gold}-${var.environment}/*"
+      },
+
+      # ---------------- CloudWatch (métricas do Glue) ----------------
       {
         Sid    = "PutMetrics",
         Effect = "Allow",
@@ -70,6 +94,7 @@ resource "aws_iam_role_policy" "glue_s3_access" {
     ]
   })
 }
+
 
 module "glue_role" {
   source      = "../../modules/iam_role_glue"
@@ -89,8 +114,8 @@ module "glue_bronze_to_silver" {
   job_name          = "bronze_to_silver_${var.environment}"
   role_arn          = module.glue_role.role_arn
   script_location   = "s3://${var.bees_s3_scripts}-${var.environment}/glue/bronze_to_silver.py"
-  glue_version      = "4.0"
-  number_of_workers = 2
+  glue_version      = "5.0"
+  number_of_workers = 3
   worker_type       = "G.1X"
   environment       = var.environment
   additional_arguments = {
@@ -106,9 +131,18 @@ module "glue_silver_to_gold" {
   source        = "../../modules/glue_job"
   job_name      = "silver_to_gold_${var.environment}"
   role_arn      = module.glue_role.role_arn
-  script_location = "s3://${var.bees_s3_scripts}-${var.environment}/silver_to_gold.py"
-  number_of_workers = 5
+  script_location   = "s3://${var.bees_s3_scripts}-${var.environment}/glue/silver_to_gold.py"
+
+  glue_version      = "5.0"
+  number_of_workers = 3
   worker_type       = "G.1X"
-  glue_version  = "3.0"
   environment   = var.environment
+
+  additional_arguments = {
+    "--ingestion_date" = ""  # passamos na execução
+    "--dataset_name"   = "openbrewerydb"
+    "--silver_bucket"  = "${var.bees_s3_silver}-${var.environment}"
+    "--gold_bucket"    = "${var.bees_s3_gold}-${var.environment}"
+  }
+  depends_on = [ module.upload_bronze_to_silver ]
 }
