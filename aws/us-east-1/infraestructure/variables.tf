@@ -79,3 +79,9 @@ variable "security_group_ids" {
   default     = []
 }
 
+
+variable "pipeline_schedule_cron" {
+  type        = string
+  description = "Cron do EventBridge para rodar a pipeline"
+  default     = "cron(0 3 * * ? *)" # 03:00 UTC diário
+}
