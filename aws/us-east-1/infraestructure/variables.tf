@@ -92,3 +92,9 @@ variable "alert_email"     {
   default     = "diego.moraees@outlook.com"
 
 }
+
+variable "enable_glue_alerts" {
+  description = "If true, send failure alerts of Glue Job via EventBridge -> SNS"
+  type        = bool
+  default     = false
+}

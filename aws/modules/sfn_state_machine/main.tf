@@ -11,7 +11,7 @@ data "aws_region" "current" {}
 resource "aws_cloudwatch_log_group" "sfn" {
   count             = var.enable_logging ? 1 : 0
   name              = "/aws/states/${var.name}-${var.environment}"
-  retention_in_days = 14
+  retention_in_days = 7
 }
 
 # Step Functions Role
@@ -90,12 +90,6 @@ locals {
           FunctionName = var.lambda_function_arn
           Payload      = {}
         }
-        Retry = [{
-          ErrorEquals     = ["States.ALL"]
-          IntervalSeconds = 30
-          BackoffRate     = 2.0
-          MaxAttempts     = 3
-        }]
         ResultPath = "$.ingest"
         Next       = "BronzeToSilver"
       }
@@ -106,12 +100,6 @@ locals {
         Parameters = {
           JobName = var.glue_job_bronze_name
         }
-        Retry = [{
-          ErrorEquals     = ["States.ALL"]
-          IntervalSeconds = 60
-          BackoffRate     = 2.0
-          MaxAttempts     = 2
-        }]
         Next = "SilverToGold"
       }
 
