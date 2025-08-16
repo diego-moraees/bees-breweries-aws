@@ -12,6 +12,7 @@ module "glue_role" {
 
 module "glue_bronze_to_silver" {
   source        = "../../modules/glue_job"
+
   job_name      = "bronze_to_silver_${var.environment}"
   role_arn      = module.glue_role.role_arn  # você precisará criar esse módulo para a role
   script_location = "s3://${var.bees_s3_scripts}-${var.environment}/bronze_to_silver.py"

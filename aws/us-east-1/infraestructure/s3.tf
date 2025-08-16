@@ -34,13 +34,6 @@ module "scripts_bucket" {
   environment = var.environment
 }
 
-module "lambda_scripts" {
-  source      = "../../modules/s3_object"
-  bucket_id   = "${var.bees_s3_scripts}-${var.environment}"
-  local_path  = "../../scripts/brewery_ingest.zip"
-  remote_path = "teste"
-}
-
 # Upload dos DAGs (tudo que estiver na pasta local aws/dags)
 module "upload_dags" {
   source      = "../../modules/s3_object"
@@ -58,10 +51,24 @@ module "upload_requirements" {
 }
 
 
-# Upload de plugins.zip (opcional) da pasta aws/airflow
-# module "upload_plugins" {
-#   source      = "../../modules/s3_object"
-#   bucket_id   = module.dags_bucket.bucket_name
-#   local_path  = "${path.module}/../airflow"
-#   remote_path = ""  # envia na raiz do bucket
-# }
+# Upload dos scripts de Glue
+module "upload_bronze_to_silver" {
+  source      = "../../modules/s3_Object"
+  bucket_id   = "${var.bees_s3_scripts}-${var.environment}"
+  local_path  = "../../scripts/glue/bronze_to_silver.py"
+  remote_path = "glue"
+}
+module "upload_silver_to_gold" {
+  source      = "../../modules/s3_Object"
+  bucket_id   = "${var.bees_s3_scripts}-${var.environment}"
+  local_path  = "../../scripts/glue/silver_to_gold.py"
+  remote_path = "glue"
+}
+
+# Upload do zip da Lambda (vamos gerar manualmente no passo 5)
+module "lambda_zip" {
+  source      = "../../modules/s3_Object"
+  bucket_id   = "${var.bees_s3_scripts}-${var.environment}"
+  local_path  = "../../scripts/lambda/brewery_ingest.zip"
+  remote_path = "lambda"
+}
