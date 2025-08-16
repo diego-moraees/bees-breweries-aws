@@ -86,6 +86,7 @@ def read_bronze(spark: SparkSession, bucket: str, dataset: str, ingestion_date: 
     path = (
         f"s3a://{bucket}/{dataset}"
         f"/run_date={ingestion_date}/page=*/breweries.json"
+        # f"/TEST-FAIL-run_date={ingestion_date}/page=*/breweries.json"
     )
     return (
         spark.read.option("multiLine", "true")  # arrays in the JSON files

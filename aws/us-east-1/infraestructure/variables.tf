@@ -85,3 +85,10 @@ variable "pipeline_schedule_cron" {
   description = "Cron do EventBridge para rodar a pipeline"
   default     = "cron(0 3 * * ? *)" # 03:00 UTC diário
 }
+
+variable "alert_email"     {
+  type = string
+  description = "E-mail to send alerts when pipeline fails"
+  default     = "diego.moraees@outlook.com"
+
+}

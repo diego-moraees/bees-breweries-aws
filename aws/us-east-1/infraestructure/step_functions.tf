@@ -11,10 +11,10 @@ module "sfn_pipeline" {
   enable_logging = true
 }
 
-module "daily_trigger" {
-  source              = "../../modules/eventbridge_to_sfn"
-  name                = "breweries-pipeline"
-  environment         = var.environment
-  schedule_expression = var.pipeline_schedule_cron
-  state_machine_arn   = module.sfn_pipeline.state_machine_arn
-}
+# module "daily_trigger" {
+#   source              = "../../modules/eventbridge_to_sfn"
+#   name                = "breweries-pipeline"
+#   environment         = var.environment
+#   schedule_expression = var.pipeline_schedule_cron
+#   state_machine_arn   = module.sfn_pipeline.state_machine_arn
+# }
