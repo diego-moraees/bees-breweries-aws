@@ -3,7 +3,7 @@ Transform breweries JSON landed in the Bronze layer into a cleaned,
 columnar Silver layer (Parquet) partitioned by country and state.
 
 This script:
-1) Reads the Bronze JSON for a given `ingestion_date`.
+1) Reads the Bronze JSON for an `ingestion_date` (auto-discovered if not provided).
 2) Normalizes types and trims strings; handles missing state/country.
 3) Deduplicates by the brewery `id` keeping the latest record.
 4) Writes Parquet to the Silver bucket partitioned by `country` and `state`:
@@ -17,12 +17,14 @@ Environment variables (overridable via Glue Job arguments, see notes):
 Notes:
 - Input JSON files are arrays; we use `multiLine=true` to parse them.
 - Bronze layout (from your Lambda): <dataset>/run_date=YYYY-MM-DD/page=*/breweries.json
-- We accept --ingestion_date YYYY-MM-DD (required).
+- We accept --ingestion_date YYYY-MM-DD (optional).
 - You may also pass --dataset_name/--bronze_bucket/--silver_bucket to override envs.
 """
 
 import os
+import re
 import sys
+import boto3
 from pyspark.sql import SparkSession, Window
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
@@ -42,6 +44,36 @@ def get_spark(app_name: str = "silver_breweries"):
         .getOrCreate()
     )
     return spark
+
+
+# ---------------------------
+# Discovery
+# ---------------------------
+def discover_latest_ingestion_date(bronze_bucket: str, dataset: str) -> str:
+    """
+    List S3 prefixes and return the latest run_date=YYYY-MM-DD under <dataset>/.
+
+    Uses ListObjectsV2 with Delimiter='/' to read common prefixes like:
+    <dataset>/run_date=2025-08-16/
+    """
+    s3 = boto3.client("s3")
+    prefix = f"{dataset}/run_date="
+    paginator = s3.get_paginator("list_objects_v2")
+    rx = re.compile(rf"^{re.escape(dataset)}/run_date=(\d{{4}}-\d{{2}}-\d{{2}})/$")
+
+    dates = []
+    for page in paginator.paginate(Bucket=bronze_bucket, Prefix=prefix, Delimiter="/"):
+        for cp in page.get("CommonPrefixes", []):
+            p = cp.get("Prefix", "")
+            m = rx.match(p)
+            if m:
+                dates.append(m.group(1))
+
+    if not dates:
+        raise RuntimeError(
+            f"No run_date partitions found under s3://{bronze_bucket}/{dataset}/"
+        )
+    return sorted(dates)[-1]
 
 
 # ---------------------------
@@ -88,10 +120,8 @@ def transform(df):
 
     # Trim strings (only if present)
     str_cols = [
-        "id", "name", "brewery_type", "street",
-        "address_1", "address_2", "address_3",
-        "city", "state", "state_province", "county_province",
-        "postal_code", "country",
+        "id", "name", "brewery_type", "street", "address_1", "address_2", "address_3",
+        "city", "state", "state_province", "postal_code", "country",
         "phone", "website_url",
     ]
     for c in str_cols:
@@ -99,26 +129,19 @@ def transform(df):
             df = df.withColumn(c, F.trim(F.col(c).cast(T.StringType())))
 
     # Cast coordinates
-    if "latitude" in df.columns:
-        df = df.withColumn("latitude", F.col("latitude").cast(T.DoubleType()))
-    if "longitude" in df.columns:
-        df = df.withColumn("longitude", F.col("longitude").cast(T.DoubleType()))
+    df = (
+        df.withColumn("latitude", F.col("latitude").cast(T.DoubleType()))
+        .withColumn("longitude", F.col("longitude").cast(T.DoubleType()))
+    )
 
     # Normalize location
-    # If state is missing, try state_province/county_province; fallback to "Unknown"
-    state_expr = F.coalesce(
-        F.col("state"),
-        F.col("state_province"),
-        F.col("county_province"),
-        F.lit("Unknown"),
-    )
     df = (
         df.withColumn("country", F.coalesce(F.col("country"), F.lit("Unknown")))
-        .withColumn("state", state_expr)
+        .withColumn("state", F.coalesce(F.col("state"), F.lit("Unknown")))
     )
 
-    # Deduplicate by id (keep "latest"):
-    # Prefer: updated_at desc (if available), then name desc (stable tiebreaker)
+    # Deduplicate by id, prefer non-null updated_at then newest
+    # If API lacks updated_at, this still provides stable de-dup.
     if "updated_at" in df.columns:
         order = Window.partitionBy("id").orderBy(
             F.col("updated_at").desc_nulls_last(),
@@ -139,12 +162,34 @@ def transform(df):
     return df.select(*keep)
 
 
+def get_opt_arg(flag: str):
+    try:
+        i = sys.argv.index(flag)
+        if i + 1 < len(sys.argv) and not sys.argv[i + 1].startswith("--"):
+            return sys.argv[i + 1]
+    except ValueError:
+        pass
+    return None
+
+def has_flag(flag: str):
+    return flag in sys.argv or os.getenv(flag.strip("-").upper(), "").lower() in ("1","true","yes")
+
+
 # ---------------------------
 # Entrypoint
 # ---------------------------
 def main(ingestion_date: str, dataset_name: str, bronze_bucket: str, silver_bucket: str):
     spark = get_spark()
     try:
+        # Auto-discovery if not provided
+        if not ingestion_date:
+            ingestion_date = discover_latest_ingestion_date(bronze_bucket, dataset_name)
+            print(f"[auto] discovered ingestion_date={ingestion_date}")
+
+        if has_flag("--discover_only"):
+            print(f"[discover_only] ingestion_date={ingestion_date}")
+            return
+
         raw_df = read_bronze(spark, bronze_bucket, dataset_name, ingestion_date)
         tr_df = transform(raw_df)
         write_silver(tr_df, silver_bucket, dataset_name, ingestion_date)
@@ -154,24 +199,29 @@ def main(ingestion_date: str, dataset_name: str, bronze_bucket: str, silver_buck
 
 
 if __name__ == "__main__":
-    # Required: --ingestion_date YYYY-MM-DD
+    # Optional: --ingestion_date YYYY-MM-DD
     # Optional: --dataset_name, --bronze_bucket, --silver_bucket
-    if len(sys.argv) >= 3 and sys.argv[1] == "--ingestion_date":
-        ingestion_date = sys.argv[2]
+    dataset_name  = os.getenv("DATASET_NAME",  "openbrewerydb")
+    bronze_bucket = os.getenv("BRONZE_BUCKET", "bees-lakehouse-bronze-dev")
+    silver_bucket = os.getenv("SILVER_BUCKET", "bees-lakehouse-silver-dev")
 
-        dataset_name  = os.getenv("DATASET_NAME",  "openbrewerydb")
-        bronze_bucket = os.getenv("BRONZE_BUCKET", "bees-lakehouse-bronze-dev")
-        silver_bucket = os.getenv("SILVER_BUCKET", "bees-lakehouse-silver-dev")
+    ingestion_date = None
+    if "--ingestion_date" in sys.argv:
+        ingestion_date = sys.argv[sys.argv.index("--ingestion_date") + 1]
+    if "--dataset_name" in sys.argv:
+        dataset_name = sys.argv[sys.argv.index("--dataset_name") + 1]
+    if "--bronze_bucket" in sys.argv:
+        bronze_bucket = sys.argv[sys.argv.index("--bronze_bucket") + 1]
+    if "--silver_bucket" in sys.argv:
+        silver_bucket = sys.argv[sys.argv.index("--silver_bucket") + 1]
 
-        # Allow overriding envs via Glue args if provided
-        if "--dataset_name" in sys.argv:
-            dataset_name = sys.argv[sys.argv.index("--dataset_name") + 1]
-        if "--bronze_bucket" in sys.argv:
-            bronze_bucket = sys.argv[sys.argv.index("--bronze_bucket") + 1]
-        if "--silver_bucket" in sys.argv:
-            silver_bucket = sys.argv[sys.argv.index("--silver_bucket") + 1]
+    ingestion_date = get_opt_arg("--ingestion_date")
+    ds_arg = get_opt_arg("--dataset_name")
+    br_arg = get_opt_arg("--bronze_bucket")
+    sl_arg = get_opt_arg("--silver_bucket")
 
-        main(ingestion_date, dataset_name, bronze_bucket, silver_bucket)
-    else:
-        raise SystemExit("Usage: bronze_to_silver.py --ingestion_date YYYY-MM-DD "
-                         "[--dataset_name <name>] [--bronze_bucket <bucket>] [--silver_bucket <bucket>]")
+    if ds_arg: dataset_name = ds_arg
+    if br_arg: bronze_bucket = br_arg
+    if sl_arg: silver_bucket = sl_arg
+
+    main(ingestion_date, dataset_name, bronze_bucket, silver_bucket)

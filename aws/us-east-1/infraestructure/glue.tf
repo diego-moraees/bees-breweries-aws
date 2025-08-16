@@ -1,3 +1,76 @@
+# Policy extra para o role do Glue ler scripts, ler Bronze e escrever Silver
+resource "aws_iam_role_policy" "glue_s3_access" {
+  name = "glue-s3-access-${var.environment}"
+
+  # Pega o NOME do role a partir do ARN exportado pelo módulo (robusto mesmo sem role_name)
+  role = element(split("/", module.glue_role.role_arn), 1)
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      # Scripts bucket: listar e ler o script do job
+      {
+        Sid      = "ListScriptsBucket",
+        Effect   = "Allow",
+        Action   = ["s3:ListBucket", "s3:GetBucketLocation"],
+        Resource = "arn:aws:s3:::${var.bees_s3_scripts}-${var.environment}"
+      },
+      {
+        Sid      = "GetScriptsObjects",
+        Effect   = "Allow",
+        Action   = ["s3:GetObject"],
+        Resource = "arn:aws:s3:::${var.bees_s3_scripts}-${var.environment}/glue/*"
+      },
+
+      # Bronze: listar e ler
+      {
+        Sid      = "ListBronzeBucket",
+        Effect   = "Allow",
+        Action   = ["s3:ListBucket", "s3:GetBucketLocation"],
+        Resource = "arn:aws:s3:::${var.bees_s3_bronze}-${var.environment}"
+      },
+      {
+        Sid      = "ReadBronzeObjects",
+        Effect   = "Allow",
+        Action   = ["s3:GetObject"],
+        Resource = "arn:aws:s3:::${var.bees_s3_bronze}-${var.environment}/*"
+      },
+
+      # Silver: listar e escrever/overwritar (inclui delete e multipart)
+      {
+        Sid      = "ListSilverBucket",
+        Effect   = "Allow",
+        Action   = [
+          "s3:ListBucket",
+          "s3:GetBucketLocation",
+          "s3:ListBucketMultipartUploads"
+        ],
+        Resource = "arn:aws:s3:::${var.bees_s3_silver}-${var.environment}"
+      },
+      {
+        Sid      = "RWSilverObjects",
+        Effect   = "Allow",
+        Action   = [
+          "s3:GetObject",                 # << importante p/ Spark checar/commitar
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:AbortMultipartUpload",
+          "s3:ListMultipartUploadParts"
+        ],
+        Resource = "arn:aws:s3:::${var.bees_s3_silver}-${var.environment}/*"
+      },
+
+      # CloudWatch metrics (evita os erros do GlueCloudWatchReporter)
+      {
+        Sid    = "PutMetrics",
+        Effect = "Allow",
+        Action = ["cloudwatch:PutMetricData"],
+        Resource = "*"
+      }
+    ]
+  })
+}
+
 module "glue_role" {
   source      = "../../modules/iam_role_glue"
   role_name   = "glue_role_${var.environment}"
@@ -11,19 +84,22 @@ module "glue_role" {
 }
 
 module "glue_bronze_to_silver" {
-  source        = "../../modules/glue_job"
 
-  job_name      = "bronze_to_silver_${var.environment}"
-  role_arn      = module.glue_role.role_arn  # você precisará criar esse módulo para a role
-  script_location = "s3://${var.bees_s3_scripts}-${var.environment}/bronze_to_silver.py"
-  glue_version  = "3.0"
+  source            = "../../modules/glue_job"
+  job_name          = "bronze_to_silver_${var.environment}"
+  role_arn          = module.glue_role.role_arn
+  script_location   = "s3://${var.bees_s3_scripts}-${var.environment}/glue/bronze_to_silver.py"
+  glue_version      = "4.0"
   number_of_workers = 2
-  worker_type   = "G.1X"
-  environment   = var.environment
-
+  worker_type       = "G.1X"
+  environment       = var.environment
   additional_arguments = {
-    "--extra-py-files" = "s3://${var.bees_s3_scripts}-${var.environment}/dependencies.zip"  # se houver libs extras
+    "--ingestion_date" = ""  # passamos na execução
+    "--dataset_name"   = "openbrewerydb"
+    "--bronze_bucket"  = "${var.bees_s3_bronze}-${var.environment}"
+    "--silver_bucket"  = "${var.bees_s3_silver}-${var.environment}"
   }
+  depends_on = [ module.upload_bronze_to_silver ]
 }
 
 module "glue_silver_to_gold" {
