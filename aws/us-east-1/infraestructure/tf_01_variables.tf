@@ -47,12 +47,6 @@ variable "bees_s3_gold" {
   default     = "bees-lakehouse-gold"
 }
 
-variable "bees_s3_dags" {
-  description = "S3 Lakehouse Dags"
-  type        = string
-  default     = "bees-lakehouse-dags"
-}
-
 variable "bees_s3_scripts" {
   description = "S3 Lakehouse Scripts"
   type        = string
@@ -66,15 +60,16 @@ variable "bees_s3_logs" {
 }
 
 
+#EventBridge CRON
 variable "pipeline_schedule_cron" {
   type        = string
   description = "Cron do EventBridge para rodar a pipeline"
-  default     = "cron(0 3 * * ? *)" # 03:00 UTC diário
+  default     = "cron(0 3 * * ? *)"
 }
 
+#Email to alerts
 variable "alert_email"     {
   type = string
   description = "E-mail to send alerts when pipeline fails"
   default     = "diego.moraees@outlook.com"
-
 }

@@ -3,8 +3,8 @@ import os, json, datetime, time, urllib.request, urllib.parse, boto3
 S3 = boto3.client("s3")
 
 API = "https://api.openbrewerydb.org/v1/breweries"
-PER_PAGE = int(os.getenv("PER_PAGE", "200"))       # pode ajustar por env var
-REQUEST_SLEEP = float(os.getenv("REQUEST_SLEEP", "0.2"))  # pausa leve entre páginas
+PER_PAGE = int(os.getenv("PER_PAGE", "200"))
+REQUEST_SLEEP = float(os.getenv("REQUEST_SLEEP", "0.2"))
 
 def fetch_page(page: int):
     params = {"per_page": PER_PAGE, "page": page}
@@ -50,7 +50,7 @@ def lambda_handler(event, context):
         if REQUEST_SLEEP > 0:
             time.sleep(REQUEST_SLEEP)
 
-    # Manifesto com metadados da ingestão
+    # Manifest with ingestion metadata
     manifest = {
         "run_date": run_date,
         "per_page": PER_PAGE,

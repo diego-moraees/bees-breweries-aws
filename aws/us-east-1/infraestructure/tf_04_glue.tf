@@ -1,8 +1,8 @@
-# Policy extra para o role do Glue ler scripts, ler Bronze, escrever Silver e Gold
+# Policy for Glue role read scripts, read Bronze, write Silver and Gold
 resource "aws_iam_role_policy" "glue_s3_access" {
   name = "glue-s3-access-${var.environment}"
 
-  # Pega o NOME do role a partir do ARN exportado pelo módulo (robusto mesmo sem role_name)
+  # Get role name using module ARN
   role = element(split("/", module.glue_role.role_arn), 1)
 
   policy = jsonencode({

@@ -64,7 +64,7 @@ def get_spark(app_name: str = "gold_breweries"):
         # Delta Lake configs
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
         .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        # Log store recomendado para S3
+        # Log store for S3
         .config("spark.delta.logStore.class", "org.apache.spark.sql.delta.storage.S3SingleDriverLogStore")
         .getOrCreate()
     )
@@ -92,7 +92,7 @@ def write_gold(df, bucket: str, dataset: str, ingestion_date: str):
      .withColumn("ingestion_date", F.lit(ingestion_date))  # partição no Delta
      .write
      .format("delta")
-     .mode("overwrite")  # se preferir incremental: "append"
+     .mode("overwrite")
      .partitionBy("ingestion_date", "country", "state")
      .save(out))
 
@@ -101,7 +101,6 @@ def write_gold(df, bucket: str, dataset: str, ingestion_date: str):
 # Entrypoint
 # ---------------------------
 def main():
-    # Somente via ENV (ou defaults do código). Nada de CLI.
     dataset_name      = os.getenv("DATASET_NAME",      "openbrewerydb")
     gold_dataset_name = os.getenv("GOLD_DATASET_NAME", "openbrewerydb_agg")
     silver_bucket     = os.getenv("SILVER_BUCKET",     "bees-lakehouse-silver-dev")

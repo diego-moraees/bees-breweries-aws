@@ -1,4 +1,4 @@
-# IAM Role para a Lambda
+# IAM Role for Lambda
 module "lambda_brewery_role" {
   source             = "../../modules/iam_role"
   role_name          = "brewery_lambda_role-${var.environment}"
@@ -18,23 +18,7 @@ module "lambda_brewery_role" {
 }
 
 
-# Política adicional para a Lambda poder iniciar Glue
-# resource "aws_iam_role_policy" "lambda_glue_access" {
-#   name = "lambda-glue-access-${var.environment}"
-#   # ATENÇÃO: use o output correto do seu módulo. Normalmente é role_name:
-#   role = module.lambda_brewery_role.role_name
-#
-#   policy = jsonencode({
-#     Version = "2012-10-17",
-#     Statement = [{
-#       Effect   = "Allow",
-#       Action   = ["glue:StartJobRun", "glue:GetJobRun", "glue:GetJobRuns"],
-#       Resource = "*"
-#     }]
-#   })
-# }
-
-# Função Lambda (módulo)
+# Lambda function
 module "lambda_brewery" {
   source         = "../../modules/lambda"
   function_name  = "brewery_ingest-${var.environment}"
@@ -42,7 +26,7 @@ module "lambda_brewery" {
   handler        = "brewery_ingest.lambda_handler"
   runtime        = "python3.11"
   s3_bucket      = "${var.bees_s3_scripts}-${var.environment}"
-  s3_key         = "lambda/brewery_ingest.zip"  # corresponde ao upload do módulo lambda_scripts
+  s3_key         = "lambda/brewery_ingest.zip"
   memory_size    = 512
   timeout        = 60
   environment_variables = {
@@ -50,5 +34,5 @@ module "lambda_brewery" {
   }
   environment    = var.environment
 
-  depends_on = [ module.lambda_zip ]  # garante que o ZIP já está no S3
+  depends_on = [ module.lambda_zip ]
 }

@@ -32,6 +32,7 @@ GROUP BY g.state
 ORDER BY total_breweries DESC
 LIMIT 10;
 
+
 -- Top cities by breweries in a state
 SELECT
   city,

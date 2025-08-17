@@ -1,8 +1,6 @@
 locals {
   table_location   = "s3://${var.bucket_name_prefix}-${var.environment}/${var.dataset_name}"
 
-  # For Athena projection templates we need literal ${var} placeholders.
-  # In Terraform, escape with $$ to emit a literal ${...}
   storage_template = "s3://${var.bucket_name_prefix}-${var.environment}/${var.dataset_name}/ingestion_date=$${ingestion_date}/country=$${country}/state=$${state}"
 
   parquet_parameters_base = {
@@ -106,7 +104,6 @@ resource "aws_glue_catalog_table" "delta" {
       serialization_library = "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe"
     }
 
-    # Columns are optional for Delta (schema comes from _delta_log); keep empty or pass in if desired
     dynamic "columns" {
       for_each = var.columns
       content {
