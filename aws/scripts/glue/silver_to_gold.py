@@ -84,14 +84,17 @@ def aggregate(df):
     )
 
 def write_gold(df, bucket: str, dataset: str, ingestion_date: str):
-    out = f"s3a://{bucket}/{dataset}/ingestion_date={ingestion_date}"
-    (
-        df.write
-        .format("delta")
-        .mode("overwrite")                 # substitui a partição do dia
-        .partitionBy("country", "state")
-        .save(out)
-    )
+    """
+    Write aggregated Delta at the ROOT, partitioned by ingestion_date/country/state.
+    """
+    out = f"s3a://{bucket}/{dataset}"
+    (df
+     .withColumn("ingestion_date", F.lit(ingestion_date))  # partição no Delta
+     .write
+     .format("delta")
+     .mode("overwrite")  # se preferir incremental: "append"
+     .partitionBy("ingestion_date", "country", "state")
+     .save(out))
 
 
 # ---------------------------

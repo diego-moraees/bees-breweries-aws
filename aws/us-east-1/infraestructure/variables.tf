@@ -66,20 +66,6 @@ variable "bees_s3_logs" {
 }
 
 
-#Network
-variable "subnet_ids" {
-  description = "List of subnet IDs for MWAA"
-  type        = list(string)
-  default     = []
-}
-
-variable "security_group_ids" {
-  description = "List of security group IDs for MWAA"
-  type        = list(string)
-  default     = []
-}
-
-
 variable "pipeline_schedule_cron" {
   type        = string
   description = "Cron do EventBridge para rodar a pipeline"
@@ -91,10 +77,4 @@ variable "alert_email"     {
   description = "E-mail to send alerts when pipeline fails"
   default     = "diego.moraees@outlook.com"
 
-}
-
-variable "enable_glue_alerts" {
-  description = "If true, send failure alerts of Glue Job via EventBridge -> SNS"
-  type        = bool
-  default     = false
 }
