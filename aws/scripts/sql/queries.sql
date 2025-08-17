@@ -15,3 +15,32 @@ FROM bees_gold_dev.openbrewerydb_agg
 WHERE ingestion_date = date '2025-08-16'
 ORDER BY breweries_count DESC
 LIMIT 20;
+
+
+-- Top states with more breweries in USA - Example
+WITH states AS (
+  SELECT * FROM (VALUES 'California', 'Texas', 'New York', 'Florida', 'Colorado') AS t(state)
+)
+SELECT
+  g.state,
+  SUM(g.breweries_count) AS total_breweries
+FROM db_gold.open_breweries_agg g
+JOIN states s ON s.state = g.state
+WHERE g.ingestion_date = '2025-08-16'
+  AND g.country = 'United States'
+GROUP BY g.state
+ORDER BY total_breweries DESC
+LIMIT 10;
+
+-- Top cities by breweries in a state
+SELECT
+  city,
+  COUNT(*) AS breweries
+FROM db_silver.open_breweries
+WHERE ingestion_date = '2025-08-16'
+  AND country = 'United States'
+  AND state   = 'California'
+GROUP BY city
+HAVING COUNT(*) >= 3
+ORDER BY breweries DESC, city
+LIMIT 20;
